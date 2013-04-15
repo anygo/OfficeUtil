@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Window xmlns:fx="http://ns.adobe.com/mxml/2009" 
+  	  xmlns:s="library://ns.adobe.com/flex/spark" 
+		  xmlns:mx="library://ns.adobe.com/flex/mx" width="600" height="600"
+		  title="Excel解析"
+		  creationComplete="init()"
+		  showStatusBar="true"
+		  initialize="statusText.setStyle('fontSize', 12)"
+		  status="QQ交流群：272732356">
+	<fx:Declarations>
+		<!-- 将非可视元素（例如服务、值对象）放在此处 -->
+	</fx:Declarations>
+	
+	<fx:Script>
+		<![CDATA[
+			import cn.window.office.core.OfficeBase;
+			import cn.window.office.core.vo.InformationVo;
+			import cn.window.office.excel.Cell;
+			import cn.window.office.excel.Excel;
+			import cn.window.office.excel.Sheet;
+			
+			import mx.events.FlexEvent;
+			import mx.utils.ObjectUtil;
+			
+			private const FILE_TYPE_LIST:Array = ["xlsx", "docx", "pptx"];
+			
+			[Bindable]
+			private var arrTree:Array = [];
+			/**已读取的所有文件  */
+			private var officeFileList:Dictionary = new Dictionary();
+			
+			/**当前选中的文件  */
+			private var selectedFile:File;
+			private var load:URLLoader;
+			
+			/**加载队列  */
+			private var loadingList:Array = [];
+			private var isLoading:Boolean;
+			
+			private function init():void
+			{
+				load = new URLLoader();
+				load.addEventListener(Event.COMPLETE, onComplete);
+				load.dataFormat = URLLoaderDataFormat.BINARY;
+				
+				this.addEventListener(NativeDragEvent.NATIVE_DRAG_ENTER,onDragIn);//通常做拖入文件的类型检查		
+				this.addEventListener(NativeDragEvent.NATIVE_DRAG_DROP,onDrop);//拖拽完成事件
+			}
+			
+			private function onDragIn(event:NativeDragEvent):void
+			{
+				var transferable:Clipboard = event.clipboard;
+				if(transferable.hasFormat(ClipboardFormats.FILE_LIST_FORMAT))
+				{
+					var isAccept:Boolean = true;
+					var files:Array = event.clipboard.getData(ClipboardFormats.FILE_LIST_FORMAT) as Array;
+					for each(var fi:File in files)
+					{
+						if(fi.isDirectory || FILE_TYPE_LIST.indexOf(fi.extension) < 0)
+						{
+							isAccept = false;
+							break;
+						}
+					}
+					if(isAccept)
+						NativeDragManager.acceptDragDrop(this);
+				}
+			}
+			
+			private function onDrop(event:NativeDragEvent):void{
+				loadingList = event.clipboard.getData(ClipboardFormats.FILE_LIST_FORMAT) as Array;
+				
+				loadFile();
+			}
+			
+			private function loadFile():void
+			{
+				if(loadingList.length == 0) return;
+				selectedFile = loadingList[0];
+				
+				isLoading = true;
+				load.load(new URLRequest(selectedFile.nativePath));
+			}
+
+			protected function onComplete(event:Event):void
+			{
+				loadingList.shift();
+				var byte:ByteArray = load.data as ByteArray;
+				var office:OfficeBase = new Excel(byte);
+				var info:InformationVo = office.fileInformation;
+				if(selectedFile)
+					info.setFileData(selectedFile);
+				
+				ui.visible = false;
+				txtInfo.visible = true;
+				txtInfo.text = ObjectUtil.toString(info);
+				
+				var obj:Object = {name:selectedFile.name, type:"file", children:[]};
+				if(selectedFile.extension == "xlsx")
+				{
+					var sheetArr:Array = (office as Excel).getSheetNameArray();
+					for each(var si:String in sheetArr)
+					{
+						obj.children.push({name:si, type:"sheet"});
+					}
+				}
+				else if(selectedFile.extension == "docx")
+				{
+					
+				}
+				else if(selectedFile.extension == "pptx")
+				{
+					
+				}
+				
+				obj.icon = selectedFile.icon.bitmaps[0];
+				arrTree.push(obj);
+				tree.dataProvider = arrTree;
+				
+				officeFileList[selectedFile.name] = office;
+				
+				isLoading = false;
+				
+				loadFile();
+			}
+			
+			protected function treeItemClick(event:MouseEvent):void
+			{
+				var obj:Object = tree.selectedItem;
+				if(obj.type == "file")
+				{
+					ui.visible = false;
+					txtInfo.visible = true;
+					txtInfo.text = ObjectUtil.toString(officeFileList[obj.name].fileInformation);
+				}
+				else if(obj.type == "sheet")
+				{
+					ui.visible = true;
+					txtInfo.visible = false;
+					var se:Excel = officeFileList[tree.getParentItem(obj).name] as Excel;
+					showExeclFile(se.getSheetByName(obj.name));
+				}
+			}
+			
+			private function showExeclFile(sheet:Sheet):void
+			{
+				while(ui.numChildren)
+				{
+					ui.removeChildAt(0);
+				}
+				if(!sheet) return;
+				
+				var tx:int = 10;
+				var ty:int = 10;
+				var item:TextField;
+				var items:Dictionary = new Dictionary();
+				for(var i:int=sheet.minRowIndex; i<=sheet.maxRowIndex; i++)
+				{
+					var row:Array = sheet.getRowAt(i);
+					for each(var cell:Cell in row)
+					{
+						
+						item = new TextField();
+						if(cell)
+						{
+							item.text = String(cell.value==null?"":cell.value);
+							items[cell.cellPosition.rowIndex + "#" + cell.cellPosition.columnIndex] = item;
+						}
+						item.border = true;
+						item.width = 50;
+						item.height = 24;
+						ui.addChild(item);
+						item.x = tx;
+						item.y = ty;
+						tx += 50;
+					}
+					
+					tx = 10;
+					ty += 24;
+				}
+				
+				ui.height = ty + 100;
+				ui.width = tx * 50 + 50;
+				
+				var marr:Array = sheet.mergeCellData;
+				var isFrist:Boolean = true;
+				for each(var mi:Object in marr)
+				{
+					var txt:TextField = items[mi.leftTop.cellPosition.rowIndex + "#" + mi.leftTop.cellPosition.columnIndex] as TextField;
+					isFrist = true;
+					for(var k:int=mi.leftTop.cellPosition.rowIndex; k<=mi.rightBottom.cellPosition.rowIndex; k++)
+					{
+						for(var l:int=mi.leftTop.cellPosition.columnIndex; l<=mi.rightBottom.cellPosition.columnIndex; l++)
+						{
+							if(isFrist)
+							{
+								isFrist = false;
+								continue;
+							}
+							ui.removeChild(items[k + "#" + l]);
+							delete items[k + "#" + l];
+						}
+						txt.width = 50 * (mi.rightBottom.cellPosition.columnIndex - mi.leftTop.cellPosition.columnIndex + 1);
+						txt.height = 24 * (mi.rightBottom.cellPosition.rowIndex - mi.leftTop.cellPosition.rowIndex + 1);
+					}
+					
+				}
+			}
+			
+		]]>
+	</fx:Script>
+	
+	<mx:HDividedBox width="100%" height="100%" paddingTop="10">
+		<mx:Tree id="tree" width="100" height="100%" labelField="name" iconField="icon" doubleClickEnabled="true" doubleClick="treeItemClick(event)"></mx:Tree>
+		
+		<s:BorderContainer  width="100%" height="100%">
+			<mx:Canvas width="100%" height="100%" horizontalScrollPolicy="on" verticalScrollPolicy="on">
+				<mx:UIComponent id="ui"/>
+			</mx:Canvas>
+			<s:TextArea id="txtInfo" x="10" y="10" width="90%" height="95%" editable="false"/>
+		</s:BorderContainer>
+	</mx:HDividedBox>
+</s:Window>
