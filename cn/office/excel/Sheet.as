@@ -81,7 +81,7 @@ package cn.office.excel
 					if(t == "s")
 						cell.value = _excelData.getSharedStringAt(int(v));
 					else
-						cell.value = v;
+						cell.value = Number(v);
 					
 					_sheetData[colItem.@r.toString()] = cell;
 				}
