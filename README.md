@@ -1,10 +1,7 @@
 office_openXML
 ==============
 
-
-这里不再更新
-
-新的开源地址：
+开源地址：
 
 http://www.airmyth.com/forum-52-1.html
 
